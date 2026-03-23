@@ -1,6 +1,6 @@
 # TTS Spice
 
-![Project logo](https://github.com/NASA-JPL-Teamtools-Studio/blob/main/docs/images/tts_image_artifacts/tts_starter_template.png)
+![Project logo](https://github.com/NASA-JPL-Teamtools-Studio/teamtools_documentation/blob/main/docs/images/tts_image_artifacts/tts_starter_template.png)
 
 ## About Teamtools Studio
 
