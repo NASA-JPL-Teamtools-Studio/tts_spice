@@ -1,0 +1,4 @@
+pytest
+tomli
+spiceypy
+tts-utilities<1.0.0,>=0.2.1
