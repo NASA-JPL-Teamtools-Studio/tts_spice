@@ -53,7 +53,7 @@ class KernelRegistry:
     # Standard kernels that should be available in the package
     STANDARD_KERNELS = {
         KernelType.LEAP_SECONDS: ["naif0012.tls"],
-        KernelType.EPHEMERIS: ["de430.bsp"],
+        KernelType.EPHEMERIS: ["de421.bsp"],
         KernelType.ORIENTATION: ["pck00010.tpc"],
     }
     

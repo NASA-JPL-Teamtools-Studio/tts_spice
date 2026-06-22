@@ -126,7 +126,7 @@ def test_leap_seconds_helper():
 def test_planetary_ephemerides_helper():
     """Test the planetary_ephemerides() shortcut."""
     furnish.planetary_ephemerides()
-    
+
     # Check that an SPK (ephemeris) file was loaded
     assert sp.ktotal("SPK") >= 1
 
