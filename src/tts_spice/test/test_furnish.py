@@ -5,6 +5,7 @@ import os
 
 # Import the module under test
 from tts_spice import furnish
+from tts_spice import utils
 
 # --- FIXTURES ---
 
@@ -24,6 +25,19 @@ def clean_spice_state():
     # Clean up after test finishes
     sp.kclear()
     furnish._LOADED_KERNELS.clear()
+
+def test_spkpos_passes_observer_in_spice_argument_order(monkeypatch):
+    calls = []
+
+    def fake_spkpos(*args):
+        calls.append(args)
+        return [1.0, 2.0, 3.0], 0.0
+
+    monkeypatch.setattr(utils.sp, 'spkpos', fake_spkpos)
+    utils.spkpos('SUN', 42.0, frame='J2000', observer='-73', abcorr='NONE')
+
+    assert calls == [('SUN', 42.0, 'J2000', 'NONE', '-73')]
+
 
 # --- 1. REGISTRY & FILE EXISTENCE TESTS ---
 
