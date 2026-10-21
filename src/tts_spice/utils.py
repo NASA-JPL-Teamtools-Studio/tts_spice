@@ -35,6 +35,75 @@ def oco2_quaternion_to_spice(quaternion: Iterable[float]) -> np.ndarray:
     return np.array([q[3], -q[0], -q[1], -q[2]])
 
 
+def target_body_axis_angles(
+    target: str,
+    ets: Iterable[float],
+    quaternions: Iterable[Iterable[float]],
+    latitudes_deg: Iterable[float],
+    longitudes_deg: Iterable[float],
+    altitudes_km: Iterable[float],
+    *,
+    body_axis: Iterable[float] = (-1.0, 0.0, 0.0),
+    earth_frame: str = "IAU_EARTH",
+    inertial_frame: str = "J2000",
+    observer: str = "EARTH",
+) -> np.ndarray:
+    """Return target-to-body-axis angles for a batch of epochs in degrees.
+
+    This keeps the expensive SPK target lookup vectorized and evaluates the
+    attitude/frame transforms once per requested sample. Inputs use the
+    OCO-2 ``QInrToBdy`` quaternion convention and geodetic altitude in km.
+    """
+    ets = np.asarray(list(ets), dtype=float)
+    quaternions = np.asarray(list(quaternions), dtype=float)
+    latitudes_deg = np.asarray(list(latitudes_deg), dtype=float)
+    longitudes_deg = np.asarray(list(longitudes_deg), dtype=float)
+    altitudes_km = np.asarray(list(altitudes_km), dtype=float)
+    if ets.ndim != 1:
+        raise ValueError("ets must be one-dimensional")
+    count = len(ets)
+    if quaternions.shape != (count, 4):
+        raise ValueError("quaternions must have shape (N, 4)")
+    if any(values.shape != (count,) for values in (latitudes_deg, longitudes_deg, altitudes_km)):
+        raise ValueError("position arrays must have shape (N,)")
+
+    axis = np.asarray(list(body_axis), dtype=float)
+    if axis.shape != (3,) or not np.all(np.isfinite(axis)):
+        raise ValueError("body_axis must contain three finite components")
+    axis_norm = np.linalg.norm(axis)
+    if axis_norm == 0:
+        raise ValueError("body axis vector must be nonzero")
+    axis = axis / axis_norm
+
+    radii = sp.bodvrd("EARTH", "RADII", 3)[1]
+    latitudes = np.deg2rad(latitudes_deg)
+    longitudes = np.deg2rad(longitudes_deg)
+    eccentricity_squared = (radii[0] ** 2 - radii[2] ** 2) / radii[0] ** 2
+    prime_vertical_radius = radii[0] / np.sqrt(1.0 - eccentricity_squared * np.sin(latitudes) ** 2)
+    ecef = np.column_stack((
+        (prime_vertical_radius + altitudes_km) * np.cos(latitudes) * np.cos(longitudes),
+        (prime_vertical_radius + altitudes_km) * np.cos(latitudes) * np.sin(longitudes),
+        (prime_vertical_radius * (1.0 - eccentricity_squared) + altitudes_km) * np.sin(latitudes),
+    ))
+
+    target_positions, _ = sp.spkpos(target, ets, inertial_frame, "NONE", observer)
+    target_positions = np.asarray(target_positions, dtype=float)
+    spacecraft_positions = np.empty_like(ecef)
+    target_body = np.empty_like(ecef)
+    for index, et in enumerate(ets):
+        earth_to_inertial = np.asarray(sp.pxform(earth_frame, inertial_frame, float(et)))
+        spacecraft_positions[index] = earth_to_inertial.dot(ecef[index])
+        target_body[index] = q2m(oco2_quaternion_to_spice(quaternions[index])).dot(
+            target_positions[index] - spacecraft_positions[index]
+        )
+
+    target_norms = np.linalg.norm(target_body, axis=1)
+    if np.any(target_norms == 0):
+        raise ValueError("target vectors must be nonzero")
+    cosine = np.sum(target_body * axis, axis=1) / target_norms
+    return np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0)))
+
+
 def target_body_axis_angle(
     target: str,
     utc: str,
@@ -48,37 +117,20 @@ def target_body_axis_angle(
     inertial_frame: str = "J2000",
     observer: str = "EARTH",
 ) -> float:
-    """Return the angle from a body-frame axis to a SPICE target in degrees.
-
-    The quaternion is the OCO-2 ``QInrToBdy`` telemetry convention. The
-    spacecraft position is derived from geodetic latitude, longitude, and
-    altitude, and the target position is obtained relative to ``observer``.
-    """
-    et = str2et(utc)
-    radii = sp.bodvrd("EARTH", "RADII", 3)[1]
-    ecef = sp.georec(
-        math.radians(float(longitude_deg)),
-        math.radians(float(latitude_deg)),
-        float(altitude_km),
-        radii[0],
-        (radii[0] - radii[2]) / radii[0],
+    """Return the angle from a body-frame axis to a SPICE target in degrees."""
+    angle = target_body_axis_angles(
+        target,
+        [str2et(utc)],
+        [quaternion],
+        [latitude_deg],
+        [longitude_deg],
+        [altitude_km],
+        body_axis=body_axis,
+        earth_frame=earth_frame,
+        inertial_frame=inertial_frame,
+        observer=observer,
     )
-    earth_to_inertial = sp.pxform(earth_frame, inertial_frame, et)
-    spacecraft_position = np.asarray(earth_to_inertial).dot(np.asarray(ecef))
-    target_position, _ = spkpos(target, et, inertial_frame, observer=observer)
-    target_body = q2m(oco2_quaternion_to_spice(quaternion)).dot(
-        target_position - spacecraft_position
-    )
-
-    axis = np.asarray(list(body_axis), dtype=float)
-    if axis.shape != (3,) or not np.all(np.isfinite(axis)):
-        raise ValueError("body_axis must contain three finite components")
-    target_norm = np.linalg.norm(target_body)
-    axis_norm = np.linalg.norm(axis)
-    if target_norm == 0 or axis_norm == 0:
-        raise ValueError("target and body axis vectors must be nonzero")
-    cosine = np.dot(target_body, axis) / (target_norm * axis_norm)
-    return math.degrees(math.acos(float(np.clip(cosine, -1.0, 1.0))))
+    return float(angle[0])
 
 
 def kclear() -> None:
