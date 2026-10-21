@@ -14,5 +14,7 @@ from .utils import (
     str2et,
     spkpos,
     q2m,
+    oco2_quaternion_to_spice,
+    target_body_axis_angle,
     kclear,
 )
